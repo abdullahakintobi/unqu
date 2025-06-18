@@ -27,10 +27,12 @@ typedef int state_t;
 #define TS_INVALID  -1
 #define TS_INACTIVE 0
 #define TS_ACTIVE   1
+#define TS_EXITED   2
 
 struct task {
 	pid_t  id;
 	state_t state;
+	int exitcode; // only relevant if state is TS_EXITED
 	const char* name;
 	const char* arg;
 };
@@ -38,7 +40,7 @@ struct task {
 static
 bool is_running(pid_t pid) {
 	int id = waitpid(pid, NULL, WNOHANG);
-	ASSERT(id >= 0, "must not fail, currently");
+	// ASSERT(id >= 0, "must not fail, currently");
 	return id == 0;
 }
 
@@ -62,7 +64,7 @@ bool task_run(struct task* task) {
 		return true;
 	}
 	loginfo("executing '%s'", task->name);
-	if (execlp(task->name, "this is acting", task->arg, NULL) == -1) {
+	if (execlp(task->name, task->name, task->arg, NULL) == -1) {
 		perror("execlp");
 		return false;
 	}
@@ -80,21 +82,12 @@ struct qu {
 	size_t ntasks;
 };
 
-static
-void printinfo(siginfo_t *si) {
-	ASSERT(si != NULL, "`si` must not be NULL");
-	// ASSERT(si->si_code == CLD_EXITED, "code must be EXITED");
-	printf("siginfo(sig=%d, code=%d, pid=%d, status=%d)\n",
-	        si->si_signo, si->si_code, si->si_pid, si->si_status);
-}
-
 static bool had_sigchld = false;
 static siginfo_t last_siginfo;
 
 static
 void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
 	ASSERT(sig == SIGCHLD, "this handler is only for SIGCHLD");
-	printinfo(si);
 	printf("sigchld called on %d\n", sig);
 	last_siginfo = *si;
 	had_sigchld = true;
@@ -150,15 +143,14 @@ int qu_runtask(UNUSED struct qu* qu, int taskid) {
 }
 
 static
-int qu_update(struct qu* qu, siginfo_t *last_si) {
+int qu_update(struct qu* qu, siginfo_t* last_si) {
 	ASSERT(qu->ntasks > 0, "we shouldn't receive SIGCHLD when no process was ever added). this is a bug");
 
 	for (size_t i = 0; i < qu->ntasks; i += 1) {
 		struct task *task = &qu->tasks[i];
-		loginfo("task %d, pid %d", task->id, last_si->si_pid);
 		if (task->id == last_si->si_pid) {
 			loginfo("task %d done", task->id);
-			task->state = TS_INACTIVE;
+			task->state = TS_EXITED;
 			break;
 		}
 	}
