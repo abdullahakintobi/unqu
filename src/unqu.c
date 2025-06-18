@@ -159,25 +159,50 @@ int qu_update(struct qu* qu, siginfo_t* last_si) {
 	return 0;
 }
 
-int qu_poll(struct qu *qu) {
+int qu_poll(struct qu* qu) {
 	int nactive = 0;
+	int status = 0;
 	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		if (is_running(qu->tasks[i].id)) {
-			nactive += 1;
+		struct task* task = &qu->tasks[i];
+		ASSERT(task->id > 0, "this task was not initialized");
+
+		// maybe this task terminated before we got to poll on it
+		if (task->state == TS_EXITED) continue;
+
+		int id = waitpid(task->id, &status, WNOHANG);
+		switch (id) {
+		case -1:
+			perror("waitpid");
+			exit(1);
+		case 0:
+			if (task->state == TS_ACTIVE) nactive += 1;
+			continue;
+		default:
+			if (WIFEXITED(status)) {
+				task->state = TS_EXITED;
+				task->exitcode = WEXITSTATUS(status);
+			} else ASSERT(false, "what are we even doing?");
 		}
 	}
 	return nactive;
 }
 
 int main(void) {
+	int tid;
 	struct qu qu = {0};
+	struct task t = {0};
 
 	qu_init(&qu);
 
-	struct task t = newtask("sleep", "2");
-	int tid = qu_addtask(&qu, &t);
+	t = newtask("sleep", "5");
+	tid = qu_addtask(&qu, &t);
 	qu_runtask(&qu, tid);
-	loginfo("[task] %d, tid %d", t.id, tid);
+	loginfo("[task] %d, tid 0x%d", t.id, tid);
+
+	t = newtask("sleep", "7");
+	tid = qu_addtask(&qu, &t);
+	qu_runtask(&qu, tid);
+	loginfo("[task] %d, tid 0x%x", t.id, tid);
 
 	while (1) {
 		if (had_sigchld) {
@@ -186,5 +211,16 @@ int main(void) {
 		}
 		qu_poll(&qu);
 		sleep(1);
+
+		for (size_t i = 0; i < qu.ntasks; i += 1) {
+			struct task* t = &qu.tasks[i];
+			switch (t->state) {
+			case TS_ACTIVE:
+				loginfo("[%d] still active in 2025", t->id);
+				break;
+			case TS_EXITED:
+				loginfo("[%d] got shtudown in 2025", t->id);
+			}
+		}
 	}
 }
