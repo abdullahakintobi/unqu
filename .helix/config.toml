@@ -1,0 +1,5 @@
+[editor.indent-guides]
+render              = false
+
+[keys.normal]
+"="                 = "no_op" # used to be ":format"
