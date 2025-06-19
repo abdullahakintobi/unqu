@@ -162,43 +162,48 @@ int clientsock(void) {
 	return sockfd;
 }
 
-int writeall(int out, const char* bytes, size_t sz) {
-	return -1;
+static void writeall(int out, const char* bytes, size_t sz) {
+	const char* ptr = bytes;
+	size_t n = sz;
+	while (n > 0) {
+		int wn = write(out, ptr, n);
+		if (wn == -1) {
+			perror("writeall");
+			exit(1);
+		}
+		ptr += wn;
+		n -= wn;
+	}
 }
 
-static char buf[4096];
 int main(int argc, char* argv[]) {
 	int in;
 	struct config conf;
 	struct wire_frame wire;
+	static char buf[4096];
 
 	conf = parse_conf(argc, argv);
 	in = clientsock();
 
-	{ /* send the config */
-		wire = config_towire(&conf);
-		xxd((const uint8_t*)&wire, sizeof(wire));
-		if (writeall(in, (const char*)&wire, sizeof(wire)) == -1) {
-			perror("writeall");
+	/* send the config */
+	wire = config_towire(&conf);
+	xxd((const uint8_t*)&wire, sizeof(wire));
+	writeall(in, (const char*)&wire, sizeof(wire));
+
+        /* read all */
+	int n = -1;
+	while (n != 0) {
+		n = read(in, buf, sizeof(buf));
+		switch (n) {
+		case -1:
+			perror("read");
 			exit(1);
+		case 0:
+			break;
+		default:
+			printf("%*.s", n, buf);
 		}
 	}
 
-        { /* read all */
-                int n = -1;
-                while (n != 0) {
-                        n = read(in, buf, sizeof(buf));
-                        switch (n) {
-                        case -1:
-                                perror("read");
-                                exit(1);
-                        case 0:
-                                break;
-                        default:
-                                printf("%*.s", n, buf);
-                        }
-                }
-
-                puts("[client] done.");
-        }
+	puts("[client] done.");
 }
