@@ -199,7 +199,7 @@ int qu_update(struct qu* qu, siginfo_t* last_si) {
 	return 0;
 }
 
-int qu_poll(struct qu* qu) {
+int qu_poll(struct qu* qu, uint32_t timeout) {
 	int nactive = 0;
 	int status = 0;
 	for (size_t i = 0; i < qu->ntasks; i += 1) {
@@ -224,6 +224,8 @@ int qu_poll(struct qu* qu) {
 			} else ASSERT(false, "what are we even doing?");
 		}
 	}
+	sleep(timeout);
+
 	return nactive;
 }
 
@@ -281,8 +283,7 @@ int main(int argc, char* argv[]) {
 			had_sigchld = false;
 			qu_update(&qu, &last_siginfo);
 		}
-		qu_poll(&qu);
-		sleep(1);
+		qu_poll(&qu, 1);
 
 		for (size_t i = 0; i < qu.ntasks; i += 1) {
 			struct task* t = &qu.tasks[i];
