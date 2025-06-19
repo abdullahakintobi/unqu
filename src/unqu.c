@@ -1,226 +1,204 @@
-#define _POSIX_C_SOURCE 199309L
-#include <signal.h>
-#include <stdbool.h>
-#include <stdint.h>
+#define  _POSIX_C_SOURCE 2
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
-#define UNUSED __attribute__((unused))
-#define ASSERT(cond, msg)  do { \
-	if (!(cond)) { \
-		fprintf(stderr, "assertion failed: %s:%d (%s): %s\n", __FILE__, __LINE__, __func__, msg); \
-		abort(); \
-	}; \
-} while (0)
+#include "util.h"
+#include "wire.h"
 
-#define loginfo(fmt, ...) do { \
-	fprintf(stderr, "I: " fmt "\n",__VA_ARGS__); \
-} while(0)
-
-
-///////////////////////////////////
-
-typedef int state_t;
-#define TS_INVALID  -1
-#define TS_INACTIVE 0
-#define TS_ACTIVE   1
-#define TS_EXITED   2
-
-struct task {
-	pid_t  id;
-	state_t state;
-	int exitcode; // only relevant if state is TS_EXITED
-	const char* name;
-	const char* arg;
+enum subcmd {
+	SC_NOOP = -1,
+	SC_LIST = 0,
+	SC_KILL = 1,
 };
 
-static
-bool is_running(pid_t pid) {
-	int id = waitpid(pid, NULL, WNOHANG);
-	// ASSERT(id >= 0, "must not fail, currently");
-	return id == 0;
-}
+const char* subcmd_help[] = {
+	// SC_LIST
+	"list: list all processes, showing their command line and process id\n"
+	"\nusage: list [-h]\n"
+	,
 
-// arg is a concatenated list of null-terminated strings: argv0\0argv1\0argv2\0...\0
-// it must terminate with a null byte
-struct task newtask(const char* name, const char* arg) {
-	ASSERT(name != NULL, "task name must be non-null pointer");
-	return (struct task) {.id = -1, .state = TS_INACTIVE, .name = name, .arg = arg};
-}
+	// SC_KILL
+	"kill: terminates the specified process\n"
+	"\nusage: kill [-h] <pid>\n"
+	,
 
-bool task_run(struct task* task) {
-	ASSERT(task->name != NULL, "task name must be non-null pointer");
-
-	int taskid = fork();
-
-	if (taskid == -1) return false;
-	if (taskid > 0) {
-		task->id = taskid;
-		task->state = TS_ACTIVE;
-		ASSERT(is_running(taskid), "newly start process must be running, this is a bug");
-		return true;
-	}
-	loginfo("executing '%s'", task->name);
-	if (execlp(task->name, task->name, task->arg, NULL) == -1) {
-		perror("execlp");
-		return false;
-	}
-	return true;
-}
-
-bool task_isnew(struct task* task) {
-	return (task->id == -1) && (task->state == TS_INACTIVE);
-}
-
-#define MAX_TASK_COUNT 2
-
-struct qu {
-	struct task tasks[MAX_TASK_COUNT];
-	size_t ntasks;
+	//
 };
 
-static bool had_sigchld = false;
-static siginfo_t last_siginfo;
-
-static
-void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
-	ASSERT(sig == SIGCHLD, "this handler is only for SIGCHLD");
-	printf("sigchld called on %d\n", sig);
-	last_siginfo = *si;
-	had_sigchld = true;
+void printhelp(enum subcmd cmd) {
+	if (cmd == SC_NOOP) abort();
+	fprintf(stderr, "%s", subcmd_help[cmd]);
+	exit(0);
 }
 
-void qu_init(struct qu* qu) {
-	if (qu == NULL) return;
+void printusage(void) {
+	fprintf(stderr,
+	        "usage: " UNQU " [-h] <subcommand> [args...]\n"
+	        "subcommands:\n"
+	        "  list: list all processes, showing their command line and process id\n"
+	        "  kill: terminates the specified process\n"
+	);
+	exit(0);
+}
 
-	qu->ntasks = 0;
-	for (size_t i = 0; i < MAX_TASK_COUNT; i += 1)
-		qu->tasks[i].state = TS_INVALID;
+// TODO(Thu 19 Jun 12:53:42 WAT 2025):
+// 	rename this to command
+struct config {
+	enum subcmd subcmd;
+	union {
+		// SC_KILL
+		struct {
+			int32_t pid;
+		} kill;
+	};
+};
 
-	struct sigaction act = {0};
-	sigemptyset(&act.sa_mask);
-	act.sa_sigaction = &task_signalled;
-	act.sa_flags |= SA_NOCLDWAIT | SA_SIGINFO;
-	if (sigaction(SIGCHLD, &act, NULL) == -1) {
-		perror("sigaction");
+struct wire_frame config_towire(struct config* conf) {
+	struct wire_frame wf_ret = {0};
+	wf_ret.version = WIRE_VERSION;
+	wf_ret.end = WIRE_END_BYTE;
+	wf_ret.kind = (uint8_t) conf->subcmd;
+
+	switch (conf->subcmd) {
+	case SC_NOOP: abort();
+	case SC_LIST:
+		break;
+	case SC_KILL:
+		wf_ret.m.kill = *(struct msgkill*) &conf->kill;
+		break;
+	}
+	return wf_ret;
+}
+
+static
+struct config parse_list(int argc, char* argv[]) {
+	(void)argv;
+	if (argc - optind > 0) {
+		printhelp(SC_LIST);
+	}
+	return (struct config) {.subcmd = SC_LIST};
+}
+
+static
+struct config parse_kill(int argc, char* argv[]) {
+	switch (argc - optind) {
+	case 1: break;
+	case 0:
+		fprintf(stderr, "%s: subcommand 'kill' expected a process id\n", argv[0]);
+		printhelp(SC_KILL);
+		break;
+	default:
+		fprintf(stderr, "%s: subcommand 'kill' expects only one argument\n", argv[0]);
+		printhelp(SC_KILL);
+	}
+
+	int opt = getopt(argc, argv, "h");
+	switch (opt) {
+	case -1: break;
+	default: case 'h': printhelp(SC_KILL);
+	}
+
+	errno = 0;
+	long int pid = strtol(argv[optind], NULL, 10);
+	if (errno > 0) {
+		fprintf(stderr, "%s: '%s' is not a valid process id\n", argv[0], argv[optind]);
 		exit(1);
 	}
+
+	return (struct config) {.subcmd = SC_KILL, .kill = { .pid = (int32_t)pid}};
 }
 
-static inline
-int task_getid(struct task* task) {
-	if (task == NULL) return -1;
-	return (int)((size_t)task & 0xffffffff);
-}
+struct config parse_conf(int argc, char* argv[]) {
+	if (argc == 1 || (argc > 1 && strcmp(argv[1], "-h") == 0))
+		printusage();
 
-int qu_addtask(struct qu* qu, struct task* task) {
-	if (qu->ntasks == MAX_TASK_COUNT) return -1;
-	ASSERT(task != NULL, "cannot add null task");
-
-	qu->tasks[qu->ntasks] = *task;
-	qu->ntasks += 1;
-	// unnecessary but WTH
-	return task_getid(&qu->tasks[qu->ntasks - 1]);
-}
-
-int qu_runtask(UNUSED struct qu* qu, int taskid) {
-	struct task *task = NULL;
-	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		if (taskid == task_getid(qu->tasks + i)) {
-			task = qu->tasks + i;
-			break;
-		}
+	enum subcmd cmd = SC_NOOP;
+	struct config (*parse)(int argc, char* argv[]);
+	if (strcmp(argv[1], "list") == 0) {
+		cmd = SC_LIST;
+		parse = &parse_list;
+	} else if (strcmp(argv[1], "kill") == 0) {
+		cmd = SC_KILL;
+		parse = &parse_kill;
+	} else {
+		printusage();
 	}
 
-	if (task == NULL) return -1;
-
-	task_run(task);
-
-	return 0;
+	// parsing begins after the subcommand string
+	optind = 2;
+	struct config conf = parse(argc, argv);
+	assert(conf.subcmd == cmd);
+	return conf;
 }
 
-static
-int qu_update(struct qu* qu, siginfo_t* last_si) {
-	ASSERT(qu->ntasks > 0, "we shouldn't receive SIGCHLD when no process was ever added). this is a bug");
+int clientsock(void) {
+	int ret;
+	int sockfd;
+	struct sockaddr_un name;
 
-	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		struct task *task = &qu->tasks[i];
-		if (task->id == last_si->si_pid) {
-			loginfo("task %d done", task->id);
-			task->state = TS_EXITED;
-			break;
-		}
+	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		perror("socket");
+		exit(1);
 	}
-	qu->ntasks -= 1;
 
-	return 0;
+	memset(&name, 0, sizeof(name));
+
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, SOCK_PATH, sizeof(name.sun_path)-1);
+
+	ret = connect(sockfd, (struct sockaddr*)&name, sizeof(name));
+	if (ret == -1) {
+		perror("connect");
+		exit(1);
+	};
+
+	return sockfd;
 }
 
-int qu_poll(struct qu* qu) {
-	int nactive = 0;
-	int status = 0;
-	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		struct task* task = &qu->tasks[i];
-		ASSERT(task->id > 0, "this task was not initialized");
+int writeall(int out, const char* bytes, size_t sz) {
+	return -1;
+}
 
-		// maybe this task terminated before we got to poll on it
-		if (task->state == TS_EXITED) continue;
+static char buf[4096];
+int main(int argc, char* argv[]) {
+	int in;
+	struct config conf;
+	struct wire_frame wire;
 
-		int id = waitpid(task->id, &status, WNOHANG);
-		switch (id) {
-		case -1:
-			perror("waitpid");
+	conf = parse_conf(argc, argv);
+	in = clientsock();
+
+	{ /* send the config */
+		wire = config_towire(&conf);
+		xxd((const uint8_t*)&wire, sizeof(wire));
+		if (writeall(in, (const char*)&wire, sizeof(wire)) == -1) {
+			perror("writeall");
 			exit(1);
-		case 0:
-			if (task->state == TS_ACTIVE) nactive += 1;
-			continue;
-		default:
-			if (WIFEXITED(status)) {
-				task->state = TS_EXITED;
-				task->exitcode = WEXITSTATUS(status);
-			} else ASSERT(false, "what are we even doing?");
 		}
 	}
-	return nactive;
-}
 
-int main(void) {
-	int tid;
-	struct qu qu = {0};
-	struct task t = {0};
+        { /* read all */
+                int n = -1;
+                while (n != 0) {
+                        n = read(in, buf, sizeof(buf));
+                        switch (n) {
+                        case -1:
+                                perror("read");
+                                exit(1);
+                        case 0:
+                                break;
+                        default:
+                                printf("%*.s", n, buf);
+                        }
+                }
 
-	qu_init(&qu);
-
-	t = newtask("sleep", "5");
-	tid = qu_addtask(&qu, &t);
-	qu_runtask(&qu, tid);
-	loginfo("[task] %d, tid 0x%d", t.id, tid);
-
-	t = newtask("sleep", "7");
-	tid = qu_addtask(&qu, &t);
-	qu_runtask(&qu, tid);
-	loginfo("[task] %d, tid 0x%x", t.id, tid);
-
-	while (1) {
-		if (had_sigchld) {
-			had_sigchld = false;
-			qu_update(&qu, &last_siginfo);
-		}
-		qu_poll(&qu);
-		sleep(1);
-
-		for (size_t i = 0; i < qu.ntasks; i += 1) {
-			struct task* t = &qu.tasks[i];
-			switch (t->state) {
-			case TS_ACTIVE:
-				loginfo("[%d] still active in 2025", t->id);
-				break;
-			case TS_EXITED:
-				loginfo("[%d] got shtudown in 2025", t->id);
-			}
-		}
-	}
+                puts("[client] done.");
+        }
 }

@@ -18,15 +18,15 @@ int main(int argc, char** argv) {
 	Cmd cmd = {0};
 	nob_cc(&cmd);
 	nob_cc_flags(&cmd);
-	nob_cc_inputs(&cmd, SRC"unqu.c");
-	nob_cc_output(&cmd, BUILD"unqu");
+	nob_cc_inputs(&cmd, SRC"unqud.c");
+	nob_cc_output(&cmd, BUILD"unqud");
 
 	if (!cmd_run_sync_and_reset(&cmd)) return 1;
 
 	nob_cc(&cmd);
 	nob_cc_flags(&cmd);
-	nob_cc_inputs(&cmd, SRC"args.c");
-	nob_cc_output(&cmd, BUILD"args");
+	nob_cc_inputs(&cmd, SRC"unqu.c");
+	nob_cc_output(&cmd, BUILD"unqu");
 	if (!cmd_run_sync_and_reset(&cmd)) return 1;
 
 	printf("progname = %s\n", progname);
