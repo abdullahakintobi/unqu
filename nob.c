@@ -29,7 +29,8 @@ int main(int argc, char** argv) {
 	nob_cc_output(&cmd, BUILD"unqu");
 	if (!cmd_run_sync_and_reset(&cmd)) return 1;
 
-	printf("progname = %s\n", progname);
+	nob_log(NOB_INFO, "progname = %s", progname);
+	nob_log(NOB_INFO, "done.");
 
 	return 0;
 }

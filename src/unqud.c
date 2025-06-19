@@ -113,6 +113,37 @@ struct config parse_conf(int argc, char* argv[]) {
 	return conf;
 }
 
+int listener(void) {
+	int ret;
+	int sockfd;
+	struct sockaddr_un name;
+
+	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (sockfd == -1) {
+		perror("socket");
+		exit(1);
+	}
+
+	memset(&name, 0, sizeof(name));
+
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, SOCK_PATH, sizeof(name.sun_path)-1);
+
+	ret = bind(sockfd, (struct sockaddr*)&name, sizeof(name));
+	if (ret == -1) {
+		perror("bind");
+		exit(1);
+	};
+
+	ret = listen(sockfd, SOCK_QUEUE_SIZE);
+        if (ret == -1) {
+                perror("listen");
+                exit(1);
+        }
+
+	return sockfd;
+}
+
 ///////////////////////////////////
 
 #define MAX_TASK_COUNT 2
