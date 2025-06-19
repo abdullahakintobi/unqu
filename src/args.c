@@ -75,18 +75,16 @@ struct config parse_kill(int argc, char* argv[]) {
 	case 1: break;
 	case 0:
 		fprintf(stderr, "%s: subcommand 'kill' expected a process id\n", argv[0]);
-		goto help;
+		printhelp(SC_KILL);
 	default:
 		fprintf(stderr, "%s: subcommand 'kill' expects only one argument\n", argv[0]);
-		goto help;
+		printhelp(SC_KILL);
 	}
 
 	int opt = getopt(argc, argv, subcmd_opts[SC_KILL]);
 	switch (opt) {
 	case -1: break;
-	default: case 'h': goto help;
-
-help: printhelp(SC_KILL);
+	default: case 'h': printhelp(SC_KILL);
 	}
 
 	printf("arg=%s\n", argv[optind]);
