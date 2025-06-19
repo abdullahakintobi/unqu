@@ -19,21 +19,15 @@ const char* subcmd_opts[] = {
 const char* subcmd_help[] = {
 	// SC_LIST
 	"list: list all processes, showing their command line and process id\n"
-	"\n"
-	"usage: list [-h]\n"
+	"\nusage: list [-h]\n"
 	,
 
 	//
 };
 
 void printhelp(enum subcmd cmd) {
-	switch (cmd) {
-	case SC_LIST:
-		fprintf(stderr, "%s", subcmd_help[SC_LIST]);
-		break;
-	case SC_NOOP: abort();
-	default: abort();
-	}
+	if (cmd == SC_NOOP) abort();
+	fprintf(stderr, "%s", subcmd_help[cmd]);
 }
 
 void printusage(void) {
