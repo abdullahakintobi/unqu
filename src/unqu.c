@@ -18,6 +18,7 @@ enum subcmd {
 	SC_KILL = 1,
 };
 
+static
 const char* subcmd_help[] = {
 	// SC_LIST
 	"list: list all processes, showing their command line and process id\n"
@@ -32,12 +33,14 @@ const char* subcmd_help[] = {
 	//
 };
 
+static
 void printhelp(enum subcmd cmd) {
 	if (cmd == SC_NOOP) abort();
 	fprintf(stderr, "%s", subcmd_help[cmd]);
 	exit(0);
 }
 
+static
 void printusage(void) {
 	fprintf(stderr,
 	        "usage: " UNQU " [-h] <subcommand> [args...]\n"
@@ -60,19 +63,19 @@ struct config {
 	};
 };
 
+static
 struct wire_frame config_towire(struct config* conf) {
 	struct wire_frame wf_ret = {0};
 	wf_ret.version = WIRE_VERSION;
 	wf_ret.end = WIRE_END_BYTE;
 	wf_ret.kind = (uint8_t) conf->subcmd;
-
 	switch (conf->subcmd) {
-	case SC_NOOP: abort();
 	case SC_LIST:
 		break;
 	case SC_KILL:
 		wf_ret.m.kill = *(struct msgkill*) &conf->kill;
 		break;
+	case SC_NOOP: abort();
 	}
 	return wf_ret;
 }
@@ -115,6 +118,7 @@ struct config parse_kill(int argc, char* argv[]) {
 	return (struct config) {.subcmd = SC_KILL, .kill = { .pid = (int32_t)pid}};
 }
 
+static
 struct config parse_conf(int argc, char* argv[]) {
 	if (argc == 1 || (argc > 1 && strcmp(argv[1], "-h") == 0))
 		printusage();
@@ -138,6 +142,7 @@ struct config parse_conf(int argc, char* argv[]) {
 	return conf;
 }
 
+static
 int clientsock(void) {
 	int ret;
 	int sockfd;
@@ -162,7 +167,8 @@ int clientsock(void) {
 	return sockfd;
 }
 
-static void writeall(int out, const char* bytes, size_t sz) {
+static
+void writeall(int out, const char* bytes, size_t sz) {
 	const char* ptr = bytes;
 	size_t n = sz;
 	while (n > 0) {

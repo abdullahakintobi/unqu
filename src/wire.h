@@ -10,7 +10,7 @@ struct msgkill {
 } __attribute__((packed));
 
 struct msglist {
-	int v: 1;
+	uint8_t v: 1;
 } __attribute__((packed));
 
 struct wire_frame {
