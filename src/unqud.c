@@ -67,6 +67,54 @@ bool task_isnew(struct task* task) {
 	return (task->id == -1) && (task->state == TS_INACTIVE);
 }
 
+///////////////////////////////////
+
+struct config {
+	bool help;
+	bool daemon;
+};
+
+static
+void printusage(int code) {
+	fprintf(stderr,
+	        "start the unqu daemon\n"
+	        "\n"
+	        "usage: " UNQUD " [-h] [-d]\n"
+	        "\n"
+	        " -d     daemonize, go to background\n"
+	        " -h     print this help and exit\n"
+	        "\n"
+	);
+	exit(code);
+}
+
+static
+struct config parse_conf(int argc, char* argv[]) {
+	struct config conf = {
+		.help = false,
+		.daemon = false,
+	};
+
+	int opt;
+	while ((opt = getopt(argc, argv, "hd")) != -1) {
+		switch (opt) {
+		case 'h':
+			conf.help = true;
+			break;
+		case 'd':
+			conf.daemon = true;
+			break;
+		default: abort();
+		}
+	}
+	if (conf.help) {
+		printusage(0);
+	}
+	return conf;
+}
+
+///////////////////////////////////
+
 #define MAX_TASK_COUNT 2
 
 struct qu {
@@ -85,7 +133,7 @@ void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
 	had_sigchld = true;
 }
 
-void qu_init(struct qu* qu) {
+void qu_init(struct qu* qu, UNUSED struct config* conf) {
 	if (qu == NULL) return;
 
 	qu->ntasks = 0;
@@ -210,12 +258,13 @@ int listener(void) {
 	return sockfd;
 }
 
-int main(void) {
+int main(int argc, char* argv[]) {
 	int tid;
 	struct qu qu = {0};
 	struct task t = {0};
+	struct config conf = parse_conf(argc, argv);
 
-	qu_init(&qu);
+	qu_init(&qu, &conf);
 
 	t = newtask("sleep", "5");
 	tid = qu_addtask(&qu, &t);
