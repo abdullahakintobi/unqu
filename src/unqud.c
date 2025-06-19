@@ -1,4 +1,6 @@
 #define _POSIX_C_SOURCE 199309L
+#include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -149,8 +151,10 @@ int listener(void) {
 #define MAX_TASK_COUNT 2
 
 struct qu {
-	struct task tasks[MAX_TASK_COUNT];
+	int fd;
+	int clientfd;
 	size_t ntasks;
+	struct task tasks[MAX_TASK_COUNT];
 };
 
 static bool had_sigchld = false;
@@ -170,6 +174,9 @@ void qu_init(struct qu* qu, UNUSED struct config* conf) {
 	qu->ntasks = 0;
 	for (size_t i = 0; i < MAX_TASK_COUNT; i += 1)
 		qu->tasks[i].state = TS_INVALID;
+
+	qu->fd = listener();
+	qu->clientfd = -1;
 
 	struct sigaction act = {0};
 	sigemptyset(&act.sa_mask);
@@ -230,7 +237,7 @@ int qu_update(struct qu* qu, siginfo_t* last_si) {
 	return 0;
 }
 
-int qu_poll(struct qu* qu, uint32_t timeout) {
+int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 	int nactive = 0;
 	int status = 0;
 	for (size_t i = 0; i < qu->ntasks; i += 1) {
@@ -255,46 +262,45 @@ int qu_poll(struct qu* qu, uint32_t timeout) {
 			} else ASSERT(false, "what are we even doing?");
 		}
 	}
-	sleep(timeout);
-
-	return nactive;
-}
-
-int listener(void) {
-	int ret;
-	int sockfd;
-	struct sockaddr_un name;
-
-	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (sockfd == -1) {
-		perror("socket");
-		exit(1);
-	}
-
-	memset(&name, 0, sizeof(name));
-
-	name.sun_family = AF_UNIX;
-	strncpy(name.sun_path, SOCK_PATH, sizeof(name.sun_path)-1);
-
-	ret = bind(sockfd, (struct sockaddr*)&name, sizeof(name));
-	if (ret == -1) {
-		perror("bind");
-		exit(1);
+	struct pollfd pfd = {
+		.fd = qu->fd,
+		.events = POLLIN,
+		.revents = -1,
 	};
 
-	ret = listen(sockfd, SOCK_QUEUE_SIZE);
-        if (ret == -1) {
-                perror("listen");
-                exit(1);
-        }
+	while (1) {
+		status = poll(&pfd, 1, 1000*timeout);
+		if (status == -1) {
+			// TODO(Thu 19 Jun 23:14:51 WAT 2025):
+			//	the more sensible thing to do here is to block signals that may have interrupted
+			//	the poll
+			if (errno == EINTR) {
+				continue;
+			}
+			perror("poll");
+			exit(1);
+		}
+		break;
+	}
 
-	return sockfd;
+	bool has_client = (status > 0) && ((pfd.revents & POLLIN) == POLLIN);
+	if (has_client) {
+		int fd = accept(qu->fd, NULL, NULL);
+		if (fd == -1) {
+			perror("accept");
+			exit(1);
+		}
+		qu->clientfd = fd;
+	}
+
+	return nactive;
 }
 
 int main(int argc, char* argv[]) {
 	int tid;
 	struct qu qu = {0};
 	struct task t = {0};
+	static char buf[4096];
 	struct config conf = parse_conf(argc, argv);
 
 	qu_init(&qu, &conf);
@@ -309,20 +315,34 @@ int main(int argc, char* argv[]) {
 	qu_runtask(&qu, tid);
 	loginfo("[task] %d, tid 0x%x", t.id, tid);
 
-	while (1) {
+	for (;; qu.clientfd = -1) {
 		if (had_sigchld) {
 			had_sigchld = false;
 			qu_update(&qu, &last_siginfo);
 		}
 		qu_poll(&qu, 1);
 
+		if (qu.clientfd > -1) {
+			loginfo("has client");
+
+			int n = read(qu.clientfd, buf, sizeof(buf));
+			switch (n) {
+			default:
+				printf("got: ");
+				xxd((const uint8_t*)buf, n);
+				break;
+			case 0:
+				loginfo("client disconnected");
+				continue;
+			case -1:
+				perror("read");
+				exit(1);
+			}
+		}
+
 		for (size_t i = 0; i < qu.ntasks; i += 1) {
 			struct task* t = &qu.tasks[i];
-			switch (t->state) {
-			case TS_ACTIVE:
-				loginfo("[%d] still active in 2025", t->id);
-				break;
-			case TS_EXITED:
+			if (t->state == TS_EXITED) {
 				loginfo("[%d] got shtudown in 2025", t->id);
 			}
 		}
