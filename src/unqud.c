@@ -152,17 +152,7 @@ struct qu {
 	struct task tasks[MAX_TASK_COUNT];
 };
 
-static bool had_sigchld = false;
 static bool had_sigintr = false;
-static siginfo_t last_siginfo;
-
-static
-void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
-	ASSERT(sig == SIGCHLD, "this handler is only for SIGCHLD");
-	printf("sigchld called on %d\n", sig);
-	last_siginfo = *si;
-	had_sigchld = true;
-}
 
 static
 void qu_sigintr(UNUSED int sig) {
@@ -178,12 +168,6 @@ void qu_init(struct qu* qu, UNUSED struct config* conf) {
 
 	struct sigaction act = {0};
 	sigemptyset(&act.sa_mask);
-	act.sa_sigaction = &task_signalled;
-	act.sa_flags |= SA_NOCLDWAIT | SA_SIGINFO;
-	if (sigaction(SIGCHLD, &act, NULL) == -1) {
-		perror("sigaction");
-		exit(1);
-	}
 
 	act.sa_handler = &qu_sigintr;
 	if (sigaction(SIGINT, &act, NULL) == -1) {
@@ -228,24 +212,6 @@ int qu_runtask(UNUSED struct qu* qu, int taskid) {
 	return 0;
 }
 
-/* update the processes that have asynchronously terminated */
-static
-int qu_update(struct qu* qu, siginfo_t* last_si) {
-	ASSERT(qu->ntasks > 0, "we shouldn't receive SIGCHLD when no process was ever added). this is a bug");
-
-	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		struct task *task = &qu->tasks[i];
-		if (task->id == last_si->si_pid) {
-			loginfo("task %d done", task->id);
-			task->state = TS_EXITED;
-			break;
-		}
-	}
-	qu->ntasks -= 1;
-
-	return 0;
-}
-
 int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 	int nactive = 0;
 	int status = 0;
@@ -271,8 +237,8 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 			continue;
 		default:
 			if (WIFEXITED(status)) {
-				task->state = TS_EXITED;
 				loginfo("task %d done", task->id);
+				task->state = TS_EXITED;
 				task->exitcode = WEXITSTATUS(status);
 			} else ASSERT(false, "what are we even doing?");
 		}
@@ -336,11 +302,6 @@ int main(int argc, char* argv[]) {
 		if (had_sigintr) {
 			code = 1;
 			goto qu_shutdown;
-		}
-
-		if (had_sigchld) {
-			had_sigchld = false;
-			qu_update(&qu, &last_siginfo);
 		}
 		qu_poll(&qu, -1);
 
