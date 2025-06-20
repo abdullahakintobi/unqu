@@ -170,6 +170,7 @@ void qu_init(struct qu* qu, UNUSED struct config* conf) {
 	qu->ntasks = 0;
 	for (size_t i = 0; i < MAX_TASK_COUNT; i += 1)
 		qu->tasks[i].state = TS_INVALID;
+
 	struct sigaction act = {0};
 	sigemptyset(&act.sa_mask);
 	act.sa_sigaction = &task_signalled;
@@ -212,6 +213,7 @@ int qu_runtask(UNUSED struct qu* qu, int taskid) {
 	return 0;
 }
 
+/* update the processes that have asynchronously terminated */
 static
 int qu_update(struct qu* qu, siginfo_t* last_si) {
 	ASSERT(qu->ntasks > 0, "we shouldn't receive SIGCHLD when no process was ever added). this is a bug");
@@ -250,10 +252,12 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 		default:
 			if (WIFEXITED(status)) {
 				task->state = TS_EXITED;
+				loginfo("task %d done", task->id);
 				task->exitcode = WEXITSTATUS(status);
 			} else ASSERT(false, "what are we even doing?");
 		}
 	}
+
 	struct pollfd pfd = {
 		.fd = qu->fd,
 		.events = POLLIN,
@@ -310,7 +314,7 @@ int main(int argc, char* argv[]) {
 			had_sigchld = false;
 			qu_update(&qu, &last_siginfo);
 		}
-		qu_poll(&qu, 1);
+		qu_poll(&qu, -1);
 
 		if (qu.clientfd > -1) {
 			loginfo("has client");
@@ -330,6 +334,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
+		/* handle client */
 		for (size_t i = 0; i < qu.ntasks; i += 1) {
 			struct task* t = &qu.tasks[i];
 			if (t->state == TS_EXITED) {
