@@ -31,13 +31,6 @@ struct task {
 	const char* arg;
 };
 
-static
-bool is_running(pid_t pid) {
-	int id = waitpid(pid, NULL, WNOHANG);
-	// ASSERT(id >= 0, "must not fail, currently");
-	return id == 0;
-}
-
 // arg is a concatenated list of null-terminated strings: argv0\0argv1\0argv2\0...\0
 // it must terminate with a null byte
 struct task newtask(const char* name, const char* arg) {
@@ -54,10 +47,10 @@ bool task_run(struct task* task) {
 	if (taskid > 0) {
 		task->id = taskid;
 		task->state = TS_ACTIVE;
-		ASSERT(is_running(taskid), "newly start process must be running, this is a bug");
+		ASSERT(waitpid(taskid, NULL, WNOHANG) == 0, "newly start process must be running, this is a bug");
 		return true;
 	}
-	loginfo("executing '%s'", task->name);
+	loginfo("executing %d: '%s'", task->id, task->name);
 	if (execlp(task->name, task->name, task->arg, NULL) == -1) {
 		perror("execlp");
 		return false;
@@ -171,13 +164,11 @@ void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
 void qu_init(struct qu* qu, UNUSED struct config* conf) {
 	if (qu == NULL) return;
 
+	qu->fd = listener();
+	qu->clientfd = -1;
 	qu->ntasks = 0;
 	for (size_t i = 0; i < MAX_TASK_COUNT; i += 1)
 		qu->tasks[i].state = TS_INVALID;
-
-	qu->fd = listener();
-	qu->clientfd = -1;
-
 	struct sigaction act = {0};
 	sigemptyset(&act.sa_mask);
 	act.sa_sigaction = &task_signalled;
@@ -308,12 +299,10 @@ int main(int argc, char* argv[]) {
 	t = newtask("sleep", "5");
 	tid = qu_addtask(&qu, &t);
 	qu_runtask(&qu, tid);
-	loginfo("[task] %d, tid 0x%d", t.id, tid);
 
 	t = newtask("sleep", "7");
 	tid = qu_addtask(&qu, &t);
 	qu_runtask(&qu, tid);
-	loginfo("[task] %d, tid 0x%x", t.id, tid);
 
 	for (;; qu.clientfd = -1) {
 		if (had_sigchld) {
@@ -346,5 +335,6 @@ int main(int argc, char* argv[]) {
 				loginfo("[%d] got shtudown in 2025", t->id);
 			}
 		}
+		close(qu.clientfd);
 	}
 }
