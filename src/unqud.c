@@ -241,6 +241,10 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 		// maybe this task terminated before we got to poll on it
 		if (task->state == TS_EXITED) continue;
 
+		// TODO:
+		//	this returns -1 (and exit with 1) if there's no task is in TS_ACTIVE state.
+		//	it's results should instead be interpreted as part of what is returned by poll(),
+		//	with the task states updated approriately
 		int id = waitpid(task->id, &status, WNOHANG);
 		switch (id) {
 		case -1:
@@ -294,12 +298,14 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 
 int main(int argc, char* argv[]) {
 	int tid;
+	int code;
 	struct qu qu = {0};
 	struct task t = {0};
 	static char buf[4096];
 	struct config conf = parse_conf(argc, argv);
 
 	qu_init(&qu, &conf);
+	code = 0;
 
 	t = newtask("sleep", "5");
 	tid = qu_addtask(&qu, &t);
@@ -319,6 +325,10 @@ int main(int argc, char* argv[]) {
 		if (qu.clientfd > -1) {
 			loginfo("has client");
 
+			// TODO:
+			//	the more sensible thing to do here is to block signals that may have interrupted
+			//	the poll
+			// see TODO(Thu 19 Jun 23:14:51 WAT 2025)
 			int n = read(qu.clientfd, buf, sizeof(buf));
 			switch (n) {
 			default:
@@ -330,7 +340,8 @@ int main(int argc, char* argv[]) {
 				continue;
 			case -1:
 				perror("read");
-				exit(1);
+				code = 1;
+				goto qu_shutdown;
 			}
 		}
 
@@ -343,4 +354,8 @@ int main(int argc, char* argv[]) {
 		}
 		close(qu.clientfd);
 	}
+qu_shutdown:
+	close(qu.fd);
+	unlink(SOCK_PATH);
+	exit(code);
 }
