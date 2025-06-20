@@ -50,6 +50,7 @@ bool task_run(struct task* task) {
 		ASSERT(waitpid(taskid, NULL, WNOHANG) == 0, "newly start process must be running, this is a bug");
 		return true;
 	}
+	task->id = getpid();
 	loginfo("executing %d: '%s'", task->id, task->name);
 	if (execlp(task->name, task->name, task->arg, NULL) == -1) {
 		perror("execlp");
