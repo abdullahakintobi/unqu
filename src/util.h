@@ -11,7 +11,8 @@
 
 ////////////////////////////////////
 
-#define UNUSED __attribute__((unused))
+#define attr(a) __attribute__((a))
+#define UNUSED  attr(unused)
 #define ASSERT(cond, msg)  do { \
 	if (!(cond)) { \
 		fprintf(stderr, "assertion failed: %s:%d (%s): %s\n", __FILE__, __LINE__, __func__, msg); \
@@ -20,7 +21,7 @@
 } while (0)
 
 
-void loginfo(const char *fmt, ...) __attribute__(( format(printf, 1, 2) ));
+void loginfo(const char *fmt, ...) attr(format(printf, 1, 2));
 
 void loginfo(const char *fmt, ...)
 {

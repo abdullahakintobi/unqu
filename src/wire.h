@@ -23,17 +23,18 @@ there's message frame as a unit of communication:
 #pragma once
 
 #include <stdint.h>
+#include "util.h"
 
 #define WIRE_VERSION 0
 #define WIRE_END_BYTE 0x44
 
 struct msgkill {
 	int32_t pid;
-} __attribute__((packed));
+} attr(packed);
 
 struct msglist {
 	uint8_t v: 1;
-} __attribute__((packed));
+} attr(packed);
 
 struct wire_frame {
 	uint8_t version;
@@ -47,4 +48,4 @@ struct wire_frame {
 		struct msglist list;
 	} m;
 	uint8_t end;
-} __attribute__((packed));
+} attr(packed);
