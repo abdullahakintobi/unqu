@@ -20,17 +20,15 @@ enum subcmd {
 
 static
 const char* subcmd_help[] = {
-	// SC_LIST
+	/* SC_LIST */
 	"list: list all processes, showing their command line and process id\n"
 	"\nusage: list [-h]\n"
 	,
 
-	// SC_KILL
+	/* SC_KILL */
 	"kill: terminates the specified process\n"
 	"\nusage: kill [-h] <pid>\n"
 	,
-
-	//
 };
 
 static
@@ -51,12 +49,13 @@ void printusage(void) {
 	exit(0);
 }
 
-// TODO(Thu 19 Jun 12:53:42 WAT 2025):
-// 	rename this to command
+/* TODO(Thu 19 Jun 12:53:42 WAT 2025):
+	rename this to command
+*/
 struct config {
 	enum subcmd subcmd;
 	union {
-		// SC_KILL
+		/* SC_KILL */
 		struct {
 			int32_t pid;
 		} kill;
@@ -135,7 +134,7 @@ struct config parse_conf(int argc, char* argv[]) {
 		printusage();
 	}
 
-	// parsing begins after the subcommand string
+	/* parsing begins after the subcommand string */
 	optind = 2;
 	struct config conf = parse(argc, argv);
 	assert(conf.subcmd == cmd);

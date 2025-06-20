@@ -26,13 +26,14 @@ typedef int state_t;
 struct task {
 	pid_t  id;
 	state_t state;
-	int exitcode; // only relevant if state is TS_EXITED
+	int exitcode; /* only relevant if state is TS_EXITED */
 	const char* name;
 	const char* arg;
 };
 
-// arg is a concatenated list of null-terminated strings: argv0\0argv1\0argv2\0...\0
-// it must terminate with a null byte
+/* arg is a concatenated list of null-terminated strings: argv0\0argv1\0argv2\0...\0
+   it must terminate with a null byte
+*/
 struct task newtask(const char* name, const char* arg) {
 	ASSERT(name != NULL, "task name must be non-null pointer");
 	return (struct task) {.id = -1, .state = TS_INACTIVE, .name = name, .arg = arg};
@@ -207,7 +208,7 @@ int qu_addtask(struct qu* qu, struct task* task) {
 
 	qu->tasks[qu->ntasks] = *task;
 	qu->ntasks += 1;
-	// unnecessary but WTH
+	/* unnecessary but WTH */
 	return task_getid(&qu->tasks[qu->ntasks - 1]);
 }
 
@@ -252,13 +253,14 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 		struct task* task = &qu->tasks[i];
 		ASSERT(task->id > 0, "this task was not initialized");
 
-		// maybe this task terminated before we got to poll on it
+		/* maybe this task terminated before we got to poll on it */
 		if (task->state == TS_EXITED) continue;
 
-		// TODO:
-		//	this returns -1 (and exit with 1) if there's no task is in TS_ACTIVE state.
-		//	it's results should instead be interpreted as part of what is returned by poll(),
-		//	with the task states updated approriately
+		/* TODO:
+			this returns -1 (and exit with 1) if there's no task is in TS_ACTIVE state.
+			it's results should instead be interpreted as part of what is returned by poll(),
+			with the task states updated approriately
+		*/
 		int id = waitpid(task->id, &status, WNOHANG);
 		switch (id) {
 		case -1:
@@ -285,9 +287,10 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 	while (1) {
 		status = poll(&pfd, 1, 1000*timeout);
 		if (status == -1) {
-			// TODO(Thu 19 Jun 23:14:51 WAT 2025):
-			//	the more sensible thing to do here is to block signals that may have interrupted
-			//	the poll
+			/* TODO(Thu 19 Jun 23:14:51 WAT 2025):
+				the more sensible thing to do here is to block signals that may have interrupted
+				the poll
+			*/
 			if (errno == EINTR) {
 				return -1;
 			}
@@ -344,10 +347,11 @@ int main(int argc, char* argv[]) {
 		if (qu.clientfd > -1) {
 			loginfo("has client");
 
-			// TODO:
-			//	the more sensible thing to do here is to block signals that may have interrupted
-			//	the poll
-			// see TODO(Thu 19 Jun 23:14:51 WAT 2025)
+			/* TODO:
+				the more sensible thing to do here is to block signals that may have interrupted
+				the poll
+			* see TODO(Thu 19 Jun 23:14:51 WAT 2025)
+			*/
 			int n = read(qu.clientfd, buf, sizeof(buf));
 			switch (n) {
 			default:
