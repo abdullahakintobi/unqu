@@ -152,6 +152,7 @@ struct qu {
 };
 
 static bool had_sigchld = false;
+static bool had_sigintr = false;
 static siginfo_t last_siginfo;
 
 static
@@ -162,12 +163,15 @@ void task_signalled(int sig, siginfo_t *si, UNUSED void* uctx) {
 	had_sigchld = true;
 }
 
+static
+void qu_sigintr(UNUSED int sig) {
+	had_sigintr = true;
+	loginfo("received SIGINT");
+}
+
 void qu_init(struct qu* qu, UNUSED struct config* conf) {
 	if (qu == NULL) return;
 
-	qu->fd = listener();
-	qu->clientfd = -1;
-	qu->ntasks = 0;
 	for (size_t i = 0; i < MAX_TASK_COUNT; i += 1)
 		qu->tasks[i].state = TS_INVALID;
 
@@ -179,6 +183,16 @@ void qu_init(struct qu* qu, UNUSED struct config* conf) {
 		perror("sigaction");
 		exit(1);
 	}
+
+	act.sa_handler = &qu_sigintr;
+	if (sigaction(SIGINT, &act, NULL) == -1) {
+		perror("sigaction");
+		exit(1);
+	}
+
+	qu->fd = listener();
+	qu->ntasks = 0;
+	qu->clientfd = -1;
 }
 
 static inline
@@ -275,7 +289,7 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 			//	the more sensible thing to do here is to block signals that may have interrupted
 			//	the poll
 			if (errno == EINTR) {
-				continue;
+				return -1;
 			}
 			perror("poll");
 			exit(1);
@@ -316,6 +330,11 @@ int main(int argc, char* argv[]) {
 	qu_runtask(&qu, tid);
 
 	for (;; qu.clientfd = -1) {
+		if (had_sigintr) {
+			code = 1;
+			goto qu_shutdown;
+		}
+
 		if (had_sigchld) {
 			had_sigchld = false;
 			qu_update(&qu, &last_siginfo);
