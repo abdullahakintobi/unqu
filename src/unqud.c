@@ -254,8 +254,8 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 		status = poll(&pfd, 1, 1000*timeout);
 		if (status == -1) {
 			/* TODO(Thu 19 Jun 23:14:51 WAT 2025):
-				the more sensible thing to do here is to block signals that may have interrupted
-				the poll
+				the more sensible thing to do here is to block signals that may interrupt
+				this poll
 			*/
 			if (errno == EINTR) {
 				return -1;
@@ -321,36 +321,38 @@ int main(int argc, char* argv[]) {
 		}
 		qu_poll(&qu, -1);
 
-		if (qu.clientfd > -1) {
-			loginfo("has client");
+		if (qu.clientfd < 0) {
+			continue;
+		}
 
-			/* TODO:
-				the more sensible thing to do here is to block signals that may have interrupted
-				the poll
-			* see TODO(Thu 19 Jun 23:14:51 WAT 2025)
-			*/
-			int n = read(qu.clientfd, buf, sizeof(buf));
-			switch (n) {
-			default:
-				printf("got: ");
-				xxd((const uint8_t*)buf, n);
+		loginfo("has client");
 
-				ASSERT((size_t)n >= sizeof(struct wire_frame), "wire frame size is incorrect");
+		/* TODO:
+			the more sensible thing to do here is to block signals that may interrupt
+			this read
+		* see TODO(Thu 19 Jun 23:14:51 WAT 2025)
+		*/
+		int n = read(qu.clientfd, buf, sizeof(buf));
+		switch (n) {
+		default:
+			printf("got: ");
+			xxd((const uint8_t*)buf, n);
 
-				frame = (struct wire_frame*)buf;
-				wire_frame_print(frame);
+			ASSERT((size_t)n >= sizeof(struct wire_frame), "wire frame size is incorrect");
 
-				qu_handleclient(&qu, frame);
-				break;
-			case 0:
-				loginfo("client disconnected");
-				 qu.clientfd = -1;
-				continue;
-			case -1:
-				perror("read");
-				code = 1;
-				goto qu_shutdown;
-			}
+			frame = (struct wire_frame*)buf;
+			wire_frame_print(frame);
+
+			qu_handleclient(&qu, frame);
+			break;
+		case 0:
+			loginfo("client disconnected");
+			 qu.clientfd = -1;
+			continue;
+		case -1:
+			perror("read");
+			code = 1;
+			goto qu_shutdown;
 		}
 	}
 qu_shutdown:
