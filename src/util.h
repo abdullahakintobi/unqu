@@ -21,11 +21,27 @@
 } while (0)
 
 
-void loginfo(const char *fmt, ...) attr(format(printf, 1, 2));
+enum logkind {
+	LOGERR,
+	LOGINFO,
+};
 
-void loginfo(const char *fmt, ...)
+#define logerr(fmt, ...) unqulog(LOGERR, fmt, ##__VA_ARGS__)
+#define loginfo(fmt, ...) unqulog(LOGINFO, fmt, ##__VA_ARGS__)
+
+void unqulog(enum logkind kind, const char *fmt, ...) attr(format(printf, 2, 3));
+
+void unqulog(enum logkind kind, const char *fmt, ...)
 {
-	fprintf(stderr, "I: ");
+	switch (kind) {
+	case LOGINFO:
+		fprintf(stderr, "I: ");
+		break;
+	case LOGERR:
+		fprintf(stderr, "E: ");
+		break;
+	default:
+	}
 
 	va_list args;
 	va_start(args, fmt);
