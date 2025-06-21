@@ -206,7 +206,7 @@ int main(int argc, char* argv[]) {
 		case 0:
 			break;
 		default:
-			printf("%*.s", n, buf);
+			printf("%.*s", n, buf);
 		}
 	}
 

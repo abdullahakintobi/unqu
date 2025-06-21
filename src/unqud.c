@@ -287,12 +287,21 @@ void qu_handleclient(struct qu* qu, struct wire_frame* frame) {
 	ASSERT(frame != NULL, "got null frame");
 	ASSERT(qu->clientfd > -1, "clientfd is negative");
 
-	/* handle client */
-	for (size_t i = 0; i < qu->ntasks; i += 1) {
-		struct task* t = &qu->tasks[i];
-		if (t->state == TS_EXITED) {
-			loginfo("[%d] got shtudown in 2025", t->id);
+	switch (frame->kind) {
+	case KIND_KILL:
+		dprintf(qu->clientfd, "killed [%d]\n", frame->m.kill.pid);
+		break;
+	case KIND_LIST:
+		/* handle client */
+		for (size_t i = 0; i < qu->ntasks; i += 1) {
+			struct task* t = &qu->tasks[i];
+			loginfo("sent: [%d] %s %s (%s)", t->id, t->name, t->arg, state2str(t->state));
+			dprintf(qu->clientfd, "[%d] %s %s (%s)\n", t->id, t->name, t->arg, state2str(t->state));
 		}
+		break;
+	default:
+		logerr("unknown command: %u", frame->kind);
+		dprintf(qu->clientfd, "error: unknown command\n");
 	}
 	close(qu->clientfd);
 	qu->clientfd = -1;
