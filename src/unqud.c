@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 202506L
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
@@ -279,11 +279,27 @@ int qu_poll(struct qu* qu, uint32_t timeout /* in seconds */) {
 	return nactive;
 }
 
+void qu_handleclient(struct qu* qu, struct wire_frame* frame) {
+	ASSERT(frame != NULL, "got null frame");
+	ASSERT(qu->clientfd > -1, "clientfd is negative");
+
+	/* handle client */
+	for (size_t i = 0; i < qu->ntasks; i += 1) {
+		struct task* t = &qu->tasks[i];
+		if (t->state == TS_EXITED) {
+			loginfo("[%d] got shtudown in 2025", t->id);
+		}
+	}
+	close(qu->clientfd);
+	qu->clientfd = -1;
+}
+
 int main(int argc, char* argv[]) {
 	int tid;
 	int code;
 	struct qu qu = {0};
 	struct task t = {0};
+	struct wire_frame* frame;
 	static char buf[4096];
 	struct config conf = parse_conf(argc, argv);
 
@@ -298,7 +314,7 @@ int main(int argc, char* argv[]) {
 	tid = qu_addtask(&qu, &t);
 	qu_runtask(&qu, tid);
 
-	for (;; qu.clientfd = -1) {
+	for (;;) {
 		if (had_sigintr) {
 			code = 1;
 			goto qu_shutdown;
@@ -318,9 +334,17 @@ int main(int argc, char* argv[]) {
 			default:
 				printf("got: ");
 				xxd((const uint8_t*)buf, n);
+
+				ASSERT((size_t)n >= sizeof(struct wire_frame), "wire frame size is incorrect");
+
+				frame = (struct wire_frame*)buf;
+				wire_frame_print(frame);
+
+				qu_handleclient(&qu, frame);
 				break;
 			case 0:
 				loginfo("client disconnected");
+				 qu.clientfd = -1;
 				continue;
 			case -1:
 				perror("read");
@@ -328,15 +352,6 @@ int main(int argc, char* argv[]) {
 				goto qu_shutdown;
 			}
 		}
-
-		/* handle client */
-		for (size_t i = 0; i < qu.ntasks; i += 1) {
-			struct task* t = &qu.tasks[i];
-			if (t->state == TS_EXITED) {
-				loginfo("[%d] got shtudown in 2025", t->id);
-			}
-		}
-		close(qu.clientfd);
 	}
 qu_shutdown:
 	close(qu.fd);
