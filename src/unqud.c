@@ -298,6 +298,8 @@ void qu_handleclient(struct qu* qu, struct wire_frame* frame) {
 	qu->clientfd = -1;
 }
 
+///////////////////////////////////
+
 int main(int argc, char* argv[]) {
 	int tid;
 	int code;
@@ -328,8 +330,6 @@ int main(int argc, char* argv[]) {
 		if (qu.clientfd < 0) {
 			continue;
 		}
-
-		loginfo("has client");
 
 		/* TODO:
 			the more sensible thing to do here is to block signals that may interrupt
