@@ -22,6 +22,10 @@ typedef int state_t;
 #define TS_INACTIVE 0
 #define TS_ACTIVE   1
 #define TS_EXITED   2
+#define state2str(state) ((state) < TS_INVALID || (state) > TS_EXITED ? \
+	"UNKNOWN" : (state) == TS_INACTIVE ? \
+		"inactive" : (state) == TS_ACTIVE ? \
+		        "running" : "exited")
 
 struct task {
 	pid_t  id;
